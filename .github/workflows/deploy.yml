@@ -2,7 +2,7 @@ name: MinTic Deploy to AWS CloudFormation with differents stacks
 
 on:
   push:
-    branches: [master]
+    branches: [stacks]
   workflow_dispatch:
 
 jobs:
