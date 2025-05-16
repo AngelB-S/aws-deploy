@@ -1,97 +1,36 @@
-AWSTemplateFormatVersion: '2010-09-09'
-Description: Crea la VPC, subredes públicas, IGW y tabla de rutas para Mintic
+name: MinTic Deploy to AWS CloudFormation with differents stacks
 
-Resources:
-  # VPC principal para alojar todos los recursos
-  MinticVPC:
-    Type: AWS::EC2::VPC
-    Properties:
-      CidrBlock: 10.0.0.0/16
-      EnableDnsSupport: true
-      EnableDnsHostnames: true
-      Tags:
-        - Key: Name
-          Value: MinticVPC
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
 
-  # Gateway de Internet para permitir acceso externo
-  MinticInternetGateway:
-    Type: AWS::EC2::InternetGateway
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
 
-  # Asociación del IGW con la VPC
-  MinticAttachGateway:
-    Type: AWS::EC2::VPCGatewayAttachment
-    Properties:
-      VpcId: !Ref MinticVPC
-      InternetGatewayId: !Ref MinticInternetGateway
+    steps:
+    - name: MinTic Checkout and download repository
+      uses: actions/checkout@v3
 
-  # Subred pública en la zona us-east-1a
-  MinticPublicSubnet1:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref MinticVPC
-      CidrBlock: 10.0.1.0/24
-      AvailabilityZone: us-east-1a
-      MapPublicIpOnLaunch: true
-      Tags:
-        - Key: Name
-          Value: MinticPublicSubnet1
+    - name: MinTic Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
 
-  # Subred pública en la zona us-east-1b
-  MinticPublicSubnet2:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref MinticVPC
-      CidrBlock: 10.0.2.0/24
-      AvailabilityZone: us-east-1b
-      MapPublicIpOnLaunch: true
-      Tags:
-        - Key: Name
-          Value: MinticPublicSubnet2
+    - name: Deploy VPC
+      run: aws cloudformation deploy --template-file templates/vpc.yml --stack-name MinticVPCStack
 
-  # Tabla de rutas para las subredes públicas
-  MinticRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref MinticVPC
+    - name: Deploy Security
+      run: aws cloudformation deploy --template-file templates/security.yml --stack-name MinticSecurityStack
 
-  # Ruta predeterminada hacia el IGW
-  MinticPublicRoute:
-    Type: AWS::EC2::Route
-    DependsOn: MinticAttachGateway
-    Properties:
-      RouteTableId: !Ref MinticRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref MinticInternetGateway
+    - name: Deploy EC2
+      run: aws cloudformation deploy --template-file templates/ec2.yml --stack-name MinticEC2Stack
 
-  # Asociación de tabla de rutas con subred 1
-  MinticSubnetRouteTableAssociation1:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref MinticPublicSubnet1
-      RouteTableId: !Ref MinticRouteTable
+    - name: Deploy ALB
+      run: aws cloudformation deploy --template-file templates/alb.yml --stack-name MinticALBStack
 
-  # Asociación de tabla de rutas con subred 2
-  MinticSubnetRouteTableAssociation2:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref MinticPublicSubnet2
-      RouteTableId: !Ref MinticRouteTable
-
-Outputs:
-  # Exporta el valor de la VPC
-  VPCId:
-    Value: !Ref MinticVPC
-    Export:
-      Name: Mintic-VPCId
-
-  # Exporta el valor de la subred correspondiente
-  SubnetPublic1:
-    Value: !Ref MinticPublicSubnet1
-    Export:
-      Name: Mintic-SubnetPublic1
-
-  # Exporta el valor de la subred correspondiente
-  SubnetPublic2:
-    Value: !Ref MinticPublicSubnet2
-    Export:
-      Name: Mintic-SubnetPublic2
+    - name: Deploy ASG
+      run: aws cloudformation deploy --template-file templates/asg.yml --stack-name MinticASGStack
